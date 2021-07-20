@@ -18,17 +18,18 @@ class MessageConverter
     ros::Publisher pub_;
     ros::Publisher tf_pub_;
     int queue_size_ = 1000;
-    std::string pose_topic_, odom_topic_, pose_link_, cam_link_;
+    std::string pose_topic_, odom_topic_, pose_link_, cam_link_, imu_link_;
     tf::Transform transform_;
     bool valid_transform;
         tf::TransformListener listener_;	
 
   public:
-    MessageConverter(std::string pose_topic, std::string odom_topic, std::string pose_link, std::string cam_link) :
+    MessageConverter(std::string pose_topic, std::string odom_topic, std::string pose_link, std::string cam_link, std::string imu_link) :
       pose_topic_(pose_topic),
       odom_topic_(odom_topic),
       pose_link_(pose_link),
-      cam_link_(cam_link)
+      cam_link_(cam_link),
+      imu_link_(imu_link)
     {}
     
     bool init()
@@ -64,7 +65,7 @@ class MessageConverter
 	  //should be msg->child_frame_id, but they don't use the actual frame_id
 	  tf::StampedTransform tf_tmp;
 	  tf::Transform tf_ib, tf_ci;
-	  listener_.lookupTransform("gyro_link", cam_link_, // "camera_rgb_frame", // "camera_rgb_optical_frame", // "camera_left_optical_frame", // 
+	  listener_.lookupTransform(imu_link_, cam_link_, // "camera_rgb_frame", // "camera_rgb_optical_frame", // "camera_left_optical_frame", // 
 				      ros::Time(0), tf_tmp);
 	  tf_ib = get_tf_from_stamped_tf(tf_tmp);
 	  //

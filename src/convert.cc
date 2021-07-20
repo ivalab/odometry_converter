@@ -8,6 +8,7 @@ int main(int argc, char** argv)
   std::string odom_topic_ = "visual/odom";
   std::string pose_link_ = "base_footprint";
   std::string cam_link_ = "camera_rgb_frame";
+  std::string imu_link_ = "gyro_link";
   
   ros::NodeHandle pnh("~");
   if(pnh.getParam("pose_topic", pose_topic_))
@@ -25,6 +26,10 @@ int main(int argc, char** argv)
   if(pnh.getParam("cam_link", cam_link_))
   {
     ROS_INFO_STREAM("cam_link = " << cam_link_);
+  }
+  if(pnh.getParam("imu_link", imu_link_))
+  {
+    ROS_INFO_STREAM("imu_link = " << imu_link_);
   }
   
   /*
@@ -50,7 +55,7 @@ int main(int argc, char** argv)
     }
   */
   
-  MessageConverter converter_(pose_topic_, odom_topic_, pose_link_, cam_link_);
+  MessageConverter converter_(pose_topic_, odom_topic_, pose_link_, cam_link_, imu_link_);
   converter_.init();
 
   ros::spin();
