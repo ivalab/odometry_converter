@@ -40,6 +40,7 @@ class MessageConverter
       tf_pub_ = nh_.advertise<tf2_msgs::TFMessage>("tf", queue_size_);
 
       valid_transform = false;
+      return true;
     }
 
   private:
