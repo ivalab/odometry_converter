@@ -20,15 +20,21 @@ class MessageConverter
     int queue_size_ = 1000;
     std::string pose_topic_, odom_topic_, pose_link_, cam_link_;
     tf::Transform transform_;
+    tf::Transform init_base_odom_trans_, i_base_trans_;
+    bool init_trans_set_;
     bool valid_transform;
-        tf::TransformListener listener_;	
+    tf::TransformListener listener_;	
+
+    bool planar_robot_, nonholonomic_;
 
   public:
-    MessageConverter(std::string pose_topic, std::string odom_topic, std::string pose_link, std::string cam_link) :
+    MessageConverter(std::string pose_topic, std::string odom_topic, std::string pose_link, std::string cam_link, bool planar_robot = false, bool nonholonomic = false) :
       pose_topic_(pose_topic),
       odom_topic_(odom_topic),
       pose_link_(pose_link),
-      cam_link_(cam_link)
+      cam_link_(cam_link),
+      planar_robot_(planar_robot),
+      nonholonomic_(nonholonomic)
     {}
     
     bool init()
@@ -39,6 +45,7 @@ class MessageConverter
       pub_ = nh_.advertise<nav_msgs::Odometry>(odom_topic_, queue_size_);
       tf_pub_ = nh_.advertise<tf2_msgs::TFMessage>("tf", queue_size_);
 
+      init_trans_set_ = false;
       valid_transform = false;
       return true;
     }
@@ -64,10 +71,10 @@ class MessageConverter
 	try{
 	  //should be msg->child_frame_id, but they don't use the actual frame_id
 	  tf::StampedTransform tf_tmp;
-	  tf::Transform tf_ib, tf_ci;
-	  listener_.lookupTransform("gyro_link", cam_link_, // "camera_rgb_frame", // "camera_rgb_optical_frame", // "camera_left_optical_frame", // 
+	  tf::Transform tf_ci;
+	  listener_.lookupTransform("gyro_link", cam_link_,// "camera_rgb_frame", // "camera_rgb_optical_frame", // "camera_left_optical_frame", // 
 				      ros::Time(0), tf_tmp);
-	  tf_ib = get_tf_from_stamped_tf(tf_tmp);
+	  tf_ci = get_tf_from_stamped_tf(tf_tmp);
 	  //
 	  /*
 	  listener_.lookupTransform( "camera_rgb_optical_frame", "camera_rgb_frame", 
@@ -75,7 +82,19 @@ class MessageConverter
 	  tf_ci = get_tf_from_stamped_tf(tf_tmp);
 	  */
 	  //
-	  transform_ = tf_ib; // * tf_ci;
+    if(!init_trans_set_)
+    {
+      tf::StampedTransform init_tf, i_b_tf;
+      listener_.lookupTransform("odom", pose_link_, ros::Time(0), init_tf);
+      init_base_odom_trans_ = get_tf_from_stamped_tf(init_tf);
+
+      listener_.lookupTransform(pose_link_, "gyro_link", ros::Time(0), i_b_tf);
+      i_base_trans_ = get_tf_from_stamped_tf(i_b_tf);
+
+      init_trans_set_ = true;
+    }
+
+	  transform_ = tf_ci;
 	  valid_transform = true;
 	  
 	  ROS_INFO("found static transform for odom convertion!");
@@ -157,9 +176,22 @@ bool multiply_stamped_tfs(tf::StampedTransform A_stf,
       //
       tf::Transform input_pose, output_pose;
       tf::poseMsgToTF(msg_in.pose.pose, input_pose);
-      output_pose = transform_ * input_pose;
+      output_pose = init_base_odom_trans_ * i_base_trans_ * transform_ * input_pose * i_base_trans_.inverse();
       //tf::Transformer::transformPose(odom_link_, input_pose, output_pose);
       
+      if(planar_robot_)
+      {
+        tf::Vector3 orig_origin = output_pose.getOrigin();
+        orig_origin.setZ(0);
+        output_pose.setOrigin(orig_origin);
+        tf::Matrix3x3 orig_q = output_pose.getBasis();
+        tfScalar yaw, pitch, roll;
+        orig_q.getEulerYPR(yaw, pitch, roll);
+        tf::Quaternion planar_q;
+        planar_q.setRPY(0, 0, yaw);
+        output_pose.setRotation(planar_q);
+      }
+
       tf::poseTFToMsg(output_pose, msg_out.pose.pose);
     }
     
@@ -180,9 +212,16 @@ bool multiply_stamped_tfs(tf::StampedTransform A_stf,
                          msg_in.twist.twist.linear.y,
                          msg_in.twist.twist.linear.z);
  
-   tf::Vector3 out_rot = transform_.getBasis() * twist_rot;
-   tf::Vector3 out_vel = transform_.getBasis()* twist_vel + transform_.getOrigin().cross(out_rot);
+   tf::Vector3 out_rot = i_base_trans_.getBasis() * twist_rot;
+   tf::Vector3 out_vel = i_base_trans_.getBasis()* twist_vel + i_base_trans_.getOrigin().cross(out_rot);
    
+   if(nonholonomic_)
+   {
+    out_rot.setX(0);
+    out_rot.setY(0);
+    out_vel.setY(0);
+    out_vel.setZ(0);
+   }
    /*
    geometry_msgs::TwistStamped interframe_twist;
    tf::lookupVelocity(target_frame, msg_in.header.frame_id, msg_in.header.stamp, ros::Duration(0.1), interframe_twist); //\todo get rid of hard coded number
